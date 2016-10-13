@@ -1,0 +1,33 @@
+{
+  "name": "pm-master-ctl",
+  "version": "1.0.0",
+  "description": "Cluster process manager command line interface",
+  "main": "index.js",
+  "scripts": {
+    "start": "node bin/cmd.js",
+    "debug": "DEBUG=* node bin/cmd.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unsecured/pm-master-ctl"
+  },
+  "bugs": {
+    "url": "https://github.com/unsecured/pm-master-ctl/issues"
+  },
+  "keywords": [
+    "cluster",
+    "copri"
+  ],
+  "author": "Martin Wind",
+  "license": "ISC",
+  "dependencies": {
+    "cli-table": "^0.3.1",
+    "debug": "^2.2.0",
+    "minimist": "^1.2.0",
+    "prettysize": "0.0.3",
+    "q": "^1.4.1",
+    "stream-extra": "mawi12345/stream-extra",
+    "underscore": "^1.8.3"
+  }
+}

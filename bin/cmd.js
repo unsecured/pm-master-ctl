@@ -1,0 +1,267 @@
+#!/usr/bin/env node
+'use strict';
+
+var minimist = require('minimist');
+var _ = require('underscore');
+var Table = require('cli-table');
+var prettysize = require('prettysize');
+var PMMasterCtl = require('..');
+var debug = require('debug')('pm-master-ctl:cmd');
+
+var argv = minimist(process.argv.slice(2), {
+  alias: {
+    h: 'help',
+    q: 'quiet',
+    v: 'verbose',
+    p: 'port',
+    t: 'hostname',
+    w: 'wait',
+    s: 'stream',
+  },
+  boolean: [
+    'help',
+    'quiet',
+    'version',
+    'verbose',
+    'wait',
+    'stream',
+  ],
+  default: {
+    host: 'localhost',
+    port: 2493,
+  },
+});
+
+if (argv.version) {
+  console.log(require('../package.json').version);
+  process.exit(0);
+}
+
+if (argv.help) {
+  console.log(function () {
+  /*
+  pm-master-ctl - Cluster process manager ctl
+
+  Usage:
+    pm-master-ctl [OPTIONS] [COMMAND]
+
+  Options:
+    -t, --host                 server host [default: 'localhost']
+    -p, --port                 server port [default: 2493]
+    -q, --quiet                only show error output
+        --version              print the current version
+    -v, --verbose              be verbose
+
+  Please report bugs!  https://github.com/unsecured/pm-master-ctl/issues
+
+  */
+  }.toString().split(/\n/).slice(2, -2).join('\n'));
+  process.exit(0);
+}
+
+var commands = {
+  clients: function(ctl) {
+    return ctl.getClients()
+    .then(function(clients) {
+      if (clients.length) {
+        var table = new Table({
+          chars: {
+            mid: '',
+            'left-mid': '',
+            'mid-mid': '',
+            'right-mid': '',
+          },
+          head: ['id', 'hostname', '#', 'speed', 'memory'],
+          colWidths: [4, 20, 3, 10, 12],
+        });
+        clients.forEach(function(client) {
+          var row = [client.address, '', '', ''];
+          if (client.info.hostname) {
+            row = [client.id, client.info.hostname, client.info.cpus.length, Math.round(client.info.cpus[0].speed / 100) / 10 + ' GHz', prettysize(client.info.totalmem)];
+          }
+
+          table.push(row);
+        });
+
+        console.log(table.toString());
+      } else {
+        console.log('No clients connected');
+      }
+    });
+  },
+
+  processes: function(ctl) {
+    return ctl.getProcesses()
+    .then(function(procs) {
+      if (procs.length) {
+        var table = new Table({
+          chars: {
+            mid: '',
+            'left-mid': '',
+            'mid-mid': '',
+            'right-mid': '',
+          },
+          head: ['hostname', 'name', 'ci:pid', 'memory', 'cpu'],
+          colWidths: [20, 12, 12, 12, 8],
+        });
+        procs.forEach(function(proc) {
+          table.push([proc.client.info.hostname || proc.client.address, proc.name, proc.client.id + ':' + proc.pid, prettysize(proc.memory), proc.cpu + ' %']);
+        });
+
+        console.log(table.toString());
+      } else {
+        console.log('No processes found');
+      }
+    });
+  },
+
+  cores: function(ctl) {
+    return ctl.getCores()
+    .then(function(cores) {
+      if (cores.length) {
+        var table = new Table({
+          chars: {
+            mid: '',
+            'left-mid': '',
+            'mid-mid': '',
+            'right-mid': '',
+          },
+          head: ['hostname', '#', 'speed', 'count'],
+          colWidths: [12, 6, 12, 12],
+        });
+        cores.forEach(function(core) {
+          table.push([core.client.info.hostname || core.client.address, core.id, core.speed, core.processes.length]);
+        });
+
+        console.log(table.toString());
+      } else {
+        console.log('No cores found');
+      }
+    });
+  },
+
+  spawn: function(ctl) {
+    if (argv._.length < 2) {
+      console.log('command is required');
+      process.exit(1);
+    }
+
+    var opts = {
+      command: argv._[1],
+      args: argv._.slice(2),
+    };
+    if (argv.wait) {
+      opts.promise = 'execution';
+    }
+
+    if (argv.stream) {
+      debug('setting stream option');
+      opts.stdout = true;
+      opts.stderr = true;
+    }
+
+    if (argv.hostname) {
+      debug('setting hostname option');
+      opts.hostname = argv.hostname;
+    }
+
+    if (argv.clientId) {
+      debug('setting clientId option');
+      opts.clientId = argv.clientId;
+    }
+
+    if (argv.coreId) {
+      debug('setting coreId option');
+      opts.coreId = argv.coreId;
+    }
+
+    if (argv.name) {
+      debug('setting process name option');
+      opts.name = argv.name;
+    }
+
+    //console.log('spawn', opts);
+    return ctl.spawn(opts)
+    .progress(function(streams) {
+      debug('got streams notification setting up stdout and stderr');
+      if (streams.stdout) {
+        streams.stdout.pipe(process.stdout);
+      }
+
+      if (streams.stderr) {
+        streams.stderr.pipe(process.stderr);
+      }
+    }).then(function(procInfo) {
+      if (argv.wait) {
+        debug('process exit with code: ' + procInfo.code + ' on clientId ' +
+          procInfo.clientId + ' on core ' + procInfo.coreId);
+        process.exitCode = procInfo.code;
+      } else {
+        console.log('process created');
+      }
+    });
+  },
+
+  kill: function(ctl) {
+
+    if (argv._.length < 2) {
+      console.log('clientId and pid is required');
+      process.exit(1);
+    }
+
+    var opts = {
+      clientId: argv._[1],
+      pid: argv._[2],
+    };
+
+    if (argv.signal) {
+      opts.signal = argv.signal;
+    }
+
+    return ctl.kill(opts)
+    .then(function(procInfo) {
+      console.log('signal send');
+    });
+  },
+};
+
+// chortcuts
+commands.p = commands.processes;
+commands.c = commands.clients;
+commands.co = commands.cores;
+commands.s = commands.spawn;
+commands.k = commands.kill;
+
+if (argv._.length < 1 || !_.contains(Object.keys(commands), argv._[0])) {
+  console.log(function () {
+  /*
+  possible commands:
+   clients                   show info of connected clients
+   processes                 show info of all processes
+   cores                     info
+   spawn [COMMAND] [ARGS]    spawn a new process
+     -w, --wait              waits until the process finishes
+     -s, --stream            stream stdout and stderr
+         --coreId [NUMBER]   spawn on this core (CPU) id
+         --clientId [NUMBER] spawn on this client id only
+         --hostname [NAME]   spawn on this hostname only
+         --name [NAME]       user defined process name
+   kill [CLIENT_ID] [PI      kill a running process
+         --signal [STRING]   name of the singal to send [default: 'SIGTERM']
+  */
+  }.toString().split(/\n/).slice(2, -2).join('\n'));
+  process.exit(1);
+}
+
+var ctl = new PMMasterCtl({
+  serverHost: argv.host,
+  serverPort: parseInt(argv.port),
+});
+
+ctl.connect().then(function() {
+  return commands[argv._[0]](ctl);
+}).fail(function(err) {
+  console.error('error: ' + err.message);
+}).fin(function() {
+  return ctl.disconnect();
+}).done();
