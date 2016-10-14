@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "description": "Cluster process manager command line interface",
   "main": "index.js",
+  "bin": {
+    "pm-master-ctl": "./bin/pm-master-ctl"
+  },
   "scripts": {
-    "start": "node bin/cmd.js",
-    "debug": "DEBUG=* node bin/cmd.js",
+    "start": "node bin/pm-master-ctl",
+    "debug": "DEBUG=* node bin/pm-master-ctl",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
